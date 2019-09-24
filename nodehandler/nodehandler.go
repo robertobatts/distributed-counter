@@ -15,7 +15,6 @@ type Node struct {
 }
 
 type Request struct {
-	Item	Item 		`json:"item"`
 	Type	string	`json:"type"`
 }
 
@@ -42,14 +41,14 @@ func (node *Node) ListenOnPort() error {
 	/* Listen for incoming messages */
 	ln, _ := net.Listen("tcp", ":" + node.Port)
 	/* accept connection on port */
-	connIn, err := ln.Accept()
+	conn, err := ln.Accept()
 	if err == nil {
 		var req Request
-		json.NewDecoder(connIn).Decode(&req)
+		json.NewDecoder(conn).Decode(&req)
 		fmt.Printf("Request: %v", req)
 		resp := Response{"OK", "Ciao"}
-		json.NewEncoder(connIn).Encode(&resp)
-		connIn.Close()
+		json.NewEncoder(conn).Encode(&resp)
+		conn.Close()
 	}
 	return err
 }

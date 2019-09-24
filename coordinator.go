@@ -3,6 +3,8 @@ package main
 import (
 	"distributed-counter/nodehandler"
 	"strconv"
+	"net"
+	"encoding/json"
 )
 
 type Coordinator struct {
@@ -29,14 +31,25 @@ func (cdt *Coordinator) StartNodeInstances(n int, items []nodehandler.Item) {
 		nodes[i] = &nodehandler.Node{i, ports[i], isMaster, items[i]}
 	}
 
-	for i := 0; i < n; i++ {
+	//run nodes:
+	for i := 0; i < n-1; i++ {
 		go nodes[i].Run()
 	}
+	nodes[n-1].Run()
+
 }
 
 
 func (cdt *Coordinator) SendMessages() {
-	
+	for _, port := range cdt.Ports {
+		conn, err := net.Dial("tcp", ":" + port)
+		if err != nil {
+			//handle error
+		} else {
+			var req = nodehandler.Request{ "GET" }
+			json.NewEncoder(conn).Encode(&req)
+		}
+	}
 }
 
 func main() {
