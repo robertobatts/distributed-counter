@@ -12,28 +12,24 @@ import (
 )
 
 type Coordinator struct {
-	Ports []string            `json:"ports`
 	Nodes []*nodehandler.Node `json:"nodes"`
 }
 
 var cdt = Coordinator{}
+var NODES_NUMBER = 6
 
 func (cdt *Coordinator) StartNodeInstances(n int) {
 	nodes := make([]*nodehandler.Node, n)
 
-	ports := make([]string, n)
-	initialPort := 8090
-
-	for i := 0; i < n; i++ {
-		ports[i] = strconv.Itoa(initialPort)
-		initialPort++
-	}
+	port := 8090
 
 	//Initialize nodes:
 	for i := 0; i < n; i++ {
 		isMaster := i == 0
-		nodes[i] = &nodehandler.Node{i, ports[i], isMaster, nil}
+		nodes[i] = &nodehandler.Node{i, strconv.Itoa(port), isMaster, false, nil}
+		port++
 	}
+	cdt.Nodes = nodes
 
 	//nodes start listening for the coordinator:
 	for i := 0; i < n-1; i++ {
@@ -44,36 +40,64 @@ func (cdt *Coordinator) StartNodeInstances(n int) {
 }
 
 func (cdt *Coordinator) SendMessagesToNodes(req nodehandler.Request, items []nodehandler.Item) {
-	for i, item := range items {
-		go func() {
-			if i < len(cdt.Ports) {
-				cdt.Nodes[i].Item = &item
-				conn, err := net.Dial("tcp", ":"+cdt.Ports[i])
-				if err != nil {
-					//handle error
-				} else {
-					errEnc := json.NewEncoder(conn).Encode(&req)
-					var resp nodehandler.Response
-					errDec := json.NewDecoder(conn).Decode(&resp)
-					fmt.Printf("Status: %v", resp.Status)
-					if errEnc != nil && errDec != nil && resp.Status == "OK" {
-						/*if the data is been written correctly, I cancel the item from the Node,
-						so that the coordinator can recognize that the node is available to work another item*/
-						cdt.Nodes[i].Item = nil
-					} else {
-						//TODO: try with other ports
-					}
-				}
+	done := make(chan bool, len(items)-1)
+
+	for i := 0; i < len(items); i++ {
+		go func(idx int) {
+			if idx < len(cdt.Nodes) {
+				cdt.CallNode(req, cdt.Nodes[idx], items[idx])
 			} else {
-				//getAvailableNode(), listening continuosly for available nodes
+				//listening continuosly for available nodes until I don't find one
+				cdt.CallAvailableNode(req, items[idx])
+				done <- true
 			}
-		}()
+		}(i)
+	}
+
+	for i := 0; i < len(items); i++ {
+		<-done
+	}
+}
+
+func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node, item nodehandler.Item) error {
+	node.IsBusy = true
+	conn, err := net.Dial("tcp", ":"+node.Port)
+	if err != nil {
+		fmt.Println(err.Error())
+		cdt.CallAvailableNode(req, item)
+	} else {
+		node.Item = &item
+		errEnc := json.NewEncoder(conn).Encode(&req)
+		var resp nodehandler.Response
+		errDec := json.NewDecoder(conn).Decode(&resp)
+		fmt.Printf("Status: %v\n", resp.Status)
+		conn.Close()
+		if errEnc == nil && errDec == nil && resp.Status == "OK" {
+			/*if the data has been written correctly, I cancel the item from the Node,
+			so that the coordinator can recognize that the node is available to work another item*/
+			node.IsBusy = false
+		} else {
+			//handle
+		}
+	}
+	return err
+}
+
+func (cdt *Coordinator) CallAvailableNode(req nodehandler.Request, item nodehandler.Item) {
+	for {
+		newNode := cdt.GetAvailableNode()
+		if newNode != nil {
+			err := cdt.CallNode(req, newNode, item)
+			if err == nil {
+				break
+			}
+		}
 	}
 }
 
 func (cdt *Coordinator) GetAvailableNode() *nodehandler.Node {
 	for _, node := range cdt.Nodes {
-		if node.Item == nil {
+		if !node.IsBusy {
 			return node
 		}
 	}
@@ -108,7 +132,7 @@ func Items(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	go cdt.StartNodeInstances(6)
+	go cdt.StartNodeInstances(NODES_NUMBER)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/items/{tenant}/count", Items)

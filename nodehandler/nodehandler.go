@@ -11,6 +11,7 @@ type Node struct {
 	NodeID   int    `json:"nodeId"`
 	Port     string `json:"port"`
 	IsMaster bool   `json:"isMaster"`
+	IsBusy   bool   `json:"isBusy"`
 	Item     *Item  `json:"item,omitempty"`
 }
 
@@ -52,34 +53,37 @@ func (node *Node) Run() error {
 func (node *Node) ListenOnPort() error {
 	/* Listen for incoming messages */
 	ln, _ := net.Listen("tcp", ":"+node.Port)
-	/* accept connection on port */
-	conn, err := ln.Accept()
-	resp := Response{}
-	if err != nil {
-		resp.Status = "KO"
-		resp.Message = "Something went wrong, impossible to accept connection, port" + node.Port
-	} else {
-		var req Request
-		json.NewDecoder(conn).Decode(&req)
-		fmt.Printf("Request: %v", req)
-		fmt.Printf("Item: %v", node.Item)
-
-		switch req.Type {
-		case "GET":
-			node.CountItems()
-			resp.Status = "OK"
-		case "POST":
-			node.StoreItem()
-			resp.Status = "OK"
-		default:
+	//TODO: handle listener error
+	for {
+		/* accept connection on port */
+		conn, err := ln.Accept()
+		resp := Response{}
+		if err != nil {
 			resp.Status = "KO"
-			resp.Message = "Sorry, only POST method is supported"
-		}
+			resp.Message = "Something went wrong, impossible to accept connection, port" + node.Port
+			return err
+		} else {
+			var req Request
+			json.NewDecoder(conn).Decode(&req)
+			fmt.Printf("Request: %v, Item: %v\n", req, node.Item)
 
-		json.NewEncoder(conn).Encode(&resp)
-		conn.Close()
+			switch req.Type {
+			case "GET":
+				node.CountItems()
+				resp.Status = "OK"
+			case "POST":
+				node.StoreItem()
+				resp.Status = "OK"
+			default:
+				resp.Status = "KO"
+				resp.Message = "Sorry, only POST method is supported"
+			}
+
+			json.NewEncoder(conn).Encode(&resp)
+			conn.Close()
+		}
 	}
-	return err
+	return nil
 }
 
 func (node *Node) Clean() {
