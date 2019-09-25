@@ -4,6 +4,7 @@ import (
 	"distributed-counter/nodehandler"
 	"strconv"
 	"net"
+	"net/http"
 	"encoding/json"
 )
 
@@ -14,7 +15,7 @@ type Coordinator struct {
 
 var cdt = Coordinator{}
 
-func (cdt *Coordinator) StartNodeInstances(n int, items []nodehandler.Item) {
+func (cdt *Coordinator) StartNodeInstances(n int) {
 	nodes := make([]*nodehandler.Node, n)
 
 	ports := make([]string, n)
@@ -28,10 +29,10 @@ func (cdt *Coordinator) StartNodeInstances(n int, items []nodehandler.Item) {
 	//Initialize nodes:
 	for i := 0; i < n; i++ {
 		isMaster := i == 0
-		nodes[i] = &nodehandler.Node{i, ports[i], isMaster, items[i]}
+		nodes[i] = &nodehandler.Node{i, ports[i], isMaster, nil}
 	}
 
-	//run nodes:
+	//nodes start listening for the coordinator:
 	for i := 0; i < n-1; i++ {
 		go nodes[i].Run()
 	}
@@ -40,18 +41,47 @@ func (cdt *Coordinator) StartNodeInstances(n int, items []nodehandler.Item) {
 }
 
 
-func (cdt *Coordinator) SendMessages() {
+func (cdt *Coordinator) SendMessagesToNodes(req nodehandler.Request) {
 	for _, port := range cdt.Ports {
 		conn, err := net.Dial("tcp", ":" + port)
 		if err != nil {
 			//handle error
 		} else {
-			var req = nodehandler.Request{ "GET" }
 			json.NewEncoder(conn).Encode(&req)
 		}
 	}
 }
 
+func Items(w http.ResponseWriter, req *http.Request) {
+	resp := nodehandler.Response{}
+	switch req.Method {
+	case "GET":
+
+	case "POST":
+		decoder := json.NewDecoder(req.Body)
+		items := []nodehandler.Item{}
+		err := decoder.Decode(&items)
+
+		if err != nil {
+			resp.Status = "KO"
+			resp.Message = err.Error()
+		} else {
+			//balanceNodes() distribute items across nodes
+			cdt.SendMessagesToNodes(nodehandler.Request{ "POST" })
+			resp.Status = "OK"
+		}
+	default:
+		resp.Status = "KO"
+		resp.Message = "Sorry, only POST and GET methods are supported"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 func main() {
+	cdt.StartNodeInstances(6)
+	
+	http.HandleFunc("/items", Items)
+	http.ListenAndServe(":8085", nil)
 
 }
