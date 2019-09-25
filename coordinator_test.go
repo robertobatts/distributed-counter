@@ -37,3 +37,18 @@ func TestWithMoreItemsThanNodes(t *testing.T) {
 	go cdt.WriteMessagesToNodes(nodehandler.Request{Type: "POST"}, items)
 	time.Sleep(5 * time.Second)
 }
+
+func TestAlignNodesMemory(t *testing.T) {
+	node1 := nodehandler.Node{NodeID: 1, Port: "8090", IsMaster: true}
+	node2 := nodehandler.Node{NodeID: 1, Port: "8091", IsMaster: false}
+
+	go node1.Run()
+	go node2.Run()
+	time.Sleep(1 * time.Second)
+
+	node2.StoreItem(nodehandler.Item{ID: 1, Tenant: "PublicSonar"})
+
+	cdt := Coordinator{Nodes: []*nodehandler.Node{&node1, &node2}}
+	cdt.AlignNodesMemory()
+	time.Sleep(3 * time.Second)
+}
