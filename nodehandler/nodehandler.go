@@ -8,14 +8,14 @@ import (
 
 /* Informations about node */
 type Node struct {
-	NodeID   	int    	`json:"nodeId"`
-	Port     	string 	`json:"port"`
-	IsMaster 	bool   	`json:"isMaster"`
-	Item			*Item		`json:"item,omitempty"`
+	NodeID   int    `json:"nodeId"`
+	Port     string `json:"port"`
+	IsMaster bool   `json:"isMaster"`
+	Item     *Item  `json:"item,omitempty"`
 }
 
 type Request struct {
-	Type	string	`json:"type"`
+	Type string `json:"type"`
 }
 
 type Response struct {
@@ -36,10 +36,9 @@ func (node *Node) StoreItem() {
 
 func (node *Node) CountItems() {
 	if node.IsMaster {
-		
+
 	}
 }
-
 
 func (node *Node) Run() error {
 
@@ -52,17 +51,21 @@ func (node *Node) Run() error {
 
 func (node *Node) ListenOnPort() error {
 	/* Listen for incoming messages */
-	ln, _ := net.Listen("tcp", ":" + node.Port)
+	ln, _ := net.Listen("tcp", ":"+node.Port)
 	/* accept connection on port */
 	conn, err := ln.Accept()
-	if err == nil {
+	resp := Response{}
+	if err != nil {
+		resp.Status = "KO"
+		resp.Message = "Something went wrong, impossible to accept connection, port" + node.Port
+	} else {
 		var req Request
 		json.NewDecoder(conn).Decode(&req)
 		fmt.Printf("Request: %v", req)
+		fmt.Printf("Item: %v", node.Item)
 
-		resp := Response{}
-		switch(req.Type) {
-		case	"GET":
+		switch req.Type {
+		case "GET":
 			node.CountItems()
 			resp.Status = "OK"
 		case "POST":
@@ -77,4 +80,8 @@ func (node *Node) ListenOnPort() error {
 		conn.Close()
 	}
 	return err
+}
+
+func (node *Node) Clean() {
+	node.Item = nil
 }

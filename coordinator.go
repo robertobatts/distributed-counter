@@ -3,6 +3,7 @@ package main
 import (
 	"distributed-counter/nodehandler"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -42,15 +43,41 @@ func (cdt *Coordinator) StartNodeInstances(n int) {
 
 }
 
-func (cdt *Coordinator) SendMessagesToNodes(req nodehandler.Request) {
-	for _, port := range cdt.Ports {
-		conn, err := net.Dial("tcp", ":"+port)
-		if err != nil {
-			//handle error
-		} else {
-			json.NewEncoder(conn).Encode(&req)
+func (cdt *Coordinator) SendMessagesToNodes(req nodehandler.Request, items []nodehandler.Item) {
+	for i, item := range items {
+		go func() {
+			if i < len(cdt.Ports) {
+				cdt.Nodes[i].Item = &item
+				conn, err := net.Dial("tcp", ":"+cdt.Ports[i])
+				if err != nil {
+					//handle error
+				} else {
+					errEnc := json.NewEncoder(conn).Encode(&req)
+					var resp nodehandler.Response
+					errDec := json.NewDecoder(conn).Decode(&resp)
+					fmt.Printf("Status: %v", resp.Status)
+					if errEnc != nil && errDec != nil && resp.Status == "OK" {
+						/*if the data is been written correctly, I cancel the item from the Node,
+						so that the coordinator can recognize that the node is available to work another item*/
+						cdt.Nodes[i].Item = nil
+					} else {
+						//TODO: try with other ports
+					}
+				}
+			} else {
+				//getAvailableNode(), listening continuosly for available nodes
+			}
+		}()
+	}
+}
+
+func (cdt *Coordinator) GetAvailableNode() *nodehandler.Node {
+	for _, node := range cdt.Nodes {
+		if node.Item == nil {
+			return node
 		}
 	}
+	return nil
 }
 
 func Items(w http.ResponseWriter, req *http.Request) {
@@ -69,7 +96,7 @@ func Items(w http.ResponseWriter, req *http.Request) {
 			resp.Message = err.Error()
 		} else {
 			//balanceNodes() distribute items across nodes
-			cdt.SendMessagesToNodes(nodehandler.Request{"POST"})
+			cdt.SendMessagesToNodes(nodehandler.Request{"POST"}, items)
 			resp.Status = "OK"
 		}
 	default:
