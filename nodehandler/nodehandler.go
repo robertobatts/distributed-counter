@@ -12,19 +12,20 @@ type Node struct {
 	NodeID   int    `json:"nodeId"`
 	Port     string `json:"port"`
 	IsMaster bool   `json:"isMaster"`
-	IsBusy   bool   `json:"isBusy"`
+	IsBusy   bool   `json:"isBusy,omitempty"`
 }
 
 type Request struct {
-	Type       string         `json:"type"`
-	Item       *Item          `json:"item,omitempty"`
-	MasterPort string         `json:"masterPort"`
-	Memory     map[int64]Item `json:"memory"`
+	Type       string          `json:"type"`
+	Item       *Item           `json:"item,omitempty"`
+	MasterPort string          `json:"masterPort,omitempty"`
+	Memory     map[int64]*Item `json:"memory"`
 }
 
 type Response struct {
-	Status  string `json:"status"`
+	Status  string `json:"status,omitempty"`
 	Message string `json:"message,omitempty"`
+	Counter int    `json:"counter,omitempty`
 }
 
 type Item struct {
@@ -33,11 +34,32 @@ type Item struct {
 	LastUpdateDt time.Time `JSON:"lastUpdateDt"`
 }
 
-var inMemoryItems = make(map[int64]Item)
+var inMemoryItems = make(map[int64]*Item)
 
 func (node *Node) StoreItem(item Item) {
 	item.LastUpdateDt = time.Now()
-	inMemoryItems[item.ID] = item
+	inMemoryItems[item.ID] = &item
+}
+
+func CountItemsGroupedByTenant(tenant string) int {
+	counter := 0
+	for _, item := range inMemoryItems {
+		if item.Tenant == tenant {
+			counter++
+		}
+	}
+	return counter
+}
+
+func SaveSlaveData(req Request) {
+	slaveMem := req.Memory
+	fmt.Println(slaveMem)
+	for id, item := range slaveMem {
+		tempItem := inMemoryItems[id]
+		if tempItem == nil || tempItem.LastUpdateDt.Before(item.LastUpdateDt) {
+			inMemoryItems[id] = item
+		}
+	}
 }
 
 func MoveDataToMaster(port string) {
@@ -52,15 +74,11 @@ func MoveDataToMaster(port string) {
 	conn.Close()
 }
 
-func GetDataFromSlave(req Request) {
-	fmt.Println(req.Memory)
-}
-
 func (node *Node) HandleMoveRequest(req Request, resp *Response) {
 	if !node.IsMaster {
 		MoveDataToMaster(req.MasterPort)
 	} else {
-		GetDataFromSlave(req)
+		SaveSlaveData(req)
 	}
 }
 
@@ -85,7 +103,9 @@ func (node *Node) ListenOnPort() error {
 				node.HandleMoveRequest(req, &resp)
 
 			case "GET":
-				//count items
+				fmt.Println("Tenant: " + req.Item.Tenant)
+				resp.Status = "OK"
+				resp.Counter = CountItemsGroupedByTenant(req.Item.Tenant)
 			case "POST":
 				fmt.Printf("Item: %v\n", *req.Item)
 				node.StoreItem(*req.Item)

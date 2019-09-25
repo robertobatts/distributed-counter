@@ -59,7 +59,7 @@ func (cdt *Coordinator) WriteMessagesToNodes(req nodehandler.Request, items []no
 	}
 }
 
-func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node, item *nodehandler.Item) error {
+func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node, item *nodehandler.Item) (*nodehandler.Response, error) {
 	node.IsBusy = true
 	conn, err := net.Dial("tcp", ":"+node.Port)
 	if err != nil {
@@ -68,10 +68,7 @@ func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node
 			cdt.CallAvailableNode(req, *item)
 		}
 	} else {
-
-		if req.Type == "POST" {
-			req.Item = item
-		}
+		req.Item = item
 
 		errEnc := json.NewEncoder(conn).Encode(&req)
 		var resp nodehandler.Response
@@ -82,23 +79,24 @@ func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node
 			/*if the data has been written correctly, I cancel the item from the Node,
 			so that the coordinator can recognize that the node is available to work another item*/
 			node.IsBusy = false
+			return &resp, nil
 		} else {
 			if errEnc != nil {
-				return errEnc
+				return nil, errEnc
 			}
 			if errDec != nil {
-				return errDec
+				return nil, errDec
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (cdt *Coordinator) CallAvailableNode(req nodehandler.Request, item nodehandler.Item) {
 	for {
 		newNode := cdt.GetAvailableNode()
 		if newNode != nil {
-			err := cdt.CallNode(req, newNode, &item)
+			_, err := cdt.CallNode(req, newNode, &item)
 			if err == nil {
 				break
 			}
@@ -127,24 +125,26 @@ func (cdt *Coordinator) GetMasterNode() *nodehandler.Node {
 func (cdt *Coordinator) AlignNodesMemory() {
 	//no need to align if there is only one node
 	if len(cdt.Nodes) > 1 {
-		done := make(chan bool, len(cdt.Nodes)-2)
-
 		master := cdt.GetMasterNode()
 		req := nodehandler.Request{Type: "MOVE", MasterPort: master.Port}
+		//no reasono to run it parallel, because the master port will be busy
 		for _, node := range cdt.Nodes {
 			if !node.IsMaster {
-				go func(n *nodehandler.Node) {
-					cdt.CallNode(req, n, nil) //TODO: handle the error
-
-					done <- true
-				}(node)
+				cdt.CallNode(req, node, nil) //TODO: handle the error
 			}
 		}
-
-		for i := 0; i < len(done); i++ {
-			<-done
-		}
 	}
+}
+
+func (cdt *Coordinator) GetCounter(tenant string) (int, error) {
+	node := cdt.GetMasterNode()
+	req := nodehandler.Request{Type: "GET"}
+	resp, err := cdt.CallNode(req, node, &nodehandler.Item{Tenant: tenant})
+	if err != nil {
+		return 0, err
+	}
+	return resp.Counter, nil
+
 }
 
 func Items(w http.ResponseWriter, req *http.Request) {
@@ -152,8 +152,15 @@ func Items(w http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case "GET":
 		cdt.AlignNodesMemory()
-		//tenant := mux.Vars(req)["tenant"]
-		//TODO: handle GET
+		tenant := mux.Vars(req)["tenant"]
+		counter, err := cdt.GetCounter(tenant)
+
+		if err != nil {
+			resp.Status = "KO"
+			resp.Message = err.Error()
+		} else {
+			resp.Counter = counter
+		}
 	case "POST":
 		decoder := json.NewDecoder(req.Body)
 		items := []nodehandler.Item{}
