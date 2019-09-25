@@ -26,7 +26,7 @@ func (cdt *Coordinator) StartNodeInstances(n int) {
 	//Initialize nodes:
 	for i := 0; i < n; i++ {
 		isMaster := i == 0
-		nodes[i] = &nodehandler.Node{i, strconv.Itoa(port), isMaster, false, nil}
+		nodes[i] = &nodehandler.Node{i, strconv.Itoa(port), isMaster, false}
 		port++
 	}
 	cdt.Nodes = nodes
@@ -39,13 +39,13 @@ func (cdt *Coordinator) StartNodeInstances(n int) {
 
 }
 
-func (cdt *Coordinator) SendMessagesToNodes(req nodehandler.Request, items []nodehandler.Item) {
+func (cdt *Coordinator) WriteMessagesToNodes(req nodehandler.Request, items []nodehandler.Item) {
 	done := make(chan bool, len(items)-1)
 
 	for i := 0; i < len(items); i++ {
 		go func(idx int) {
 			if idx < len(cdt.Nodes) {
-				cdt.CallNode(req, cdt.Nodes[idx], items[idx])
+				cdt.CallNode(req, cdt.Nodes[idx], &items[idx])
 			} else {
 				//listening continuosly for available nodes until I don't find one
 				cdt.CallAvailableNode(req, items[idx])
@@ -59,15 +59,20 @@ func (cdt *Coordinator) SendMessagesToNodes(req nodehandler.Request, items []nod
 	}
 }
 
-func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node, item nodehandler.Item) error {
+func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node, item *nodehandler.Item) error {
 	node.IsBusy = true
 	conn, err := net.Dial("tcp", ":"+node.Port)
 	if err != nil {
 		fmt.Println(err.Error())
-		cdt.CallAvailableNode(req, item)
+		if req.Type == "POST" {
+			cdt.CallAvailableNode(req, *item)
+		}
 	} else {
-		node.Item = &item
-		req.Item = &item
+
+		if req.Type == "POST" {
+			req.Item = item
+		}
+
 		errEnc := json.NewEncoder(conn).Encode(&req)
 		var resp nodehandler.Response
 		errDec := json.NewDecoder(conn).Decode(&resp)
@@ -78,17 +83,22 @@ func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node
 			so that the coordinator can recognize that the node is available to work another item*/
 			node.IsBusy = false
 		} else {
-			//handle
+			if errEnc != nil {
+				return errEnc
+			}
+			if errDec != nil {
+				return errDec
+			}
 		}
 	}
-	return err
+	return nil
 }
 
 func (cdt *Coordinator) CallAvailableNode(req nodehandler.Request, item nodehandler.Item) {
 	for {
 		newNode := cdt.GetAvailableNode()
 		if newNode != nil {
-			err := cdt.CallNode(req, newNode, item)
+			err := cdt.CallNode(req, newNode, &item)
 			if err == nil {
 				break
 			}
@@ -105,10 +115,43 @@ func (cdt *Coordinator) GetAvailableNode() *nodehandler.Node {
 	return nil
 }
 
+func (cdt *Coordinator) GetMasterNode() *nodehandler.Node {
+	for _, node := range cdt.Nodes {
+		if node.IsMaster {
+			return node
+		}
+	}
+	return nil
+}
+
+func (cdt *Coordinator) AlignNodesMemory() {
+	//no need to align if there is only one node
+	if len(cdt.Nodes) > 1 {
+		done := make(chan bool, len(cdt.Nodes)-2)
+
+		master := cdt.GetMasterNode()
+		req := nodehandler.Request{Type: "MOVE", MasterPort: master.Port}
+		for _, node := range cdt.Nodes {
+			if !node.IsMaster {
+				go func(n *nodehandler.Node) {
+					cdt.CallNode(req, n, nil) //TODO: handle the error
+
+					done <- true
+				}(node)
+			}
+		}
+
+		for i := 0; i < len(done); i++ {
+			<-done
+		}
+	}
+}
+
 func Items(w http.ResponseWriter, req *http.Request) {
 	resp := nodehandler.Response{}
 	switch req.Method {
 	case "GET":
+		cdt.AlignNodesMemory()
 		//tenant := mux.Vars(req)["tenant"]
 		//TODO: handle GET
 	case "POST":
@@ -121,7 +164,7 @@ func Items(w http.ResponseWriter, req *http.Request) {
 			resp.Message = err.Error()
 		} else {
 			//balanceNodes() distribute items across nodes
-			cdt.SendMessagesToNodes(nodehandler.Request{"POST", nil}, items)
+			cdt.WriteMessagesToNodes(nodehandler.Request{Type: "POST"}, items)
 			resp.Status = "OK"
 		}
 	default:

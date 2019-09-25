@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"time"
 )
 
 /* Informations about node */
@@ -12,12 +13,13 @@ type Node struct {
 	Port     string `json:"port"`
 	IsMaster bool   `json:"isMaster"`
 	IsBusy   bool   `json:"isBusy"`
-	Item     *Item  `json:"item,omitempty"`
 }
 
 type Request struct {
-	Type string `json:"type"`
-	Item *Item  `json:"item,omitempty"`
+	Type       string         `json:"type"`
+	Item       *Item          `json:"item,omitempty"`
+	MasterPort string         `json:"masterPort"`
+	Memory     map[int64]Item `json:"memory"`
 }
 
 type Response struct {
@@ -26,29 +28,40 @@ type Response struct {
 }
 
 type Item struct {
-	ID     int    `json:"id"`
-	Tenant string `json:"tenant"`
+	ID           int64     `json:"id"`
+	Tenant       string    `json:"tenant"`
+	LastUpdateDt time.Time `JSON:"lastUpdateDt"`
 }
 
-var inMemoryItems = make(map[int]Item)
+var inMemoryItems = make(map[int64]Item)
 
 func (node *Node) StoreItem(item Item) {
-	inMemoryItems[node.Item.ID] = item
+	item.LastUpdateDt = time.Now()
+	inMemoryItems[item.ID] = item
 }
 
-func (node *Node) CountItems() {
-	if node.IsMaster {
-
+func MoveDataToMaster(port string) {
+	conn, err := net.Dial("tcp", ":"+port)
+	if err != nil {
+		//handle
 	}
+	json.NewEncoder(conn).Encode(&Request{Type: "MOVE", Memory: inMemoryItems})
+	var resp Response
+	json.NewDecoder(conn).Decode(&resp)
+	fmt.Printf("Status: %v\n", resp.Status)
+	conn.Close()
 }
 
-func (node *Node) Run() error {
+func GetDataFromSlave(req Request) {
+	fmt.Println(req.Memory)
+}
 
-	fmt.Println(node)
-
-	err := node.ListenOnPort()
-
-	return err
+func (node *Node) HandleMoveRequest(req Request, resp *Response) {
+	if !node.IsMaster {
+		MoveDataToMaster(req.MasterPort)
+	} else {
+		GetDataFromSlave(req)
+	}
 }
 
 func (node *Node) ListenOnPort() error {
@@ -68,16 +81,18 @@ func (node *Node) ListenOnPort() error {
 			json.NewDecoder(conn).Decode(&req)
 
 			switch req.Type {
+			case "MOVE":
+				node.HandleMoveRequest(req, &resp)
+
 			case "GET":
-				node.CountItems()
-				resp.Status = "OK"
+				//count items
 			case "POST":
 				fmt.Printf("Item: %v\n", *req.Item)
 				node.StoreItem(*req.Item)
 				resp.Status = "OK"
 			default:
 				resp.Status = "KO"
-				resp.Message = "Sorry, only POST method is supported"
+				resp.Message = "Sorry, only POST and GET methods are supported"
 			}
 
 			json.NewEncoder(conn).Encode(&resp)
@@ -87,6 +102,11 @@ func (node *Node) ListenOnPort() error {
 	return nil
 }
 
-func (node *Node) Clean() {
-	node.Item = nil
+func (node *Node) Run() error {
+
+	fmt.Println(node)
+
+	err := node.ListenOnPort()
+
+	return err
 }
