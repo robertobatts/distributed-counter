@@ -2,15 +2,17 @@ package main
 
 import (
 	"distributed-counter/nodehandler"
-	"strconv"
+	"encoding/json"
 	"net"
 	"net/http"
-	"encoding/json"
+	"strconv"
+
+	"github.com/gorilla/mux"
 )
 
 type Coordinator struct {
-	Ports		[]string							`json:"ports`
-	Nodes		[]*nodehandler.Node		`json:"nodes"`
+	Ports []string            `json:"ports`
+	Nodes []*nodehandler.Node `json:"nodes"`
 }
 
 var cdt = Coordinator{}
@@ -40,10 +42,9 @@ func (cdt *Coordinator) StartNodeInstances(n int) {
 
 }
 
-
 func (cdt *Coordinator) SendMessagesToNodes(req nodehandler.Request) {
 	for _, port := range cdt.Ports {
-		conn, err := net.Dial("tcp", ":" + port)
+		conn, err := net.Dial("tcp", ":"+port)
 		if err != nil {
 			//handle error
 		} else {
@@ -56,7 +57,8 @@ func Items(w http.ResponseWriter, req *http.Request) {
 	resp := nodehandler.Response{}
 	switch req.Method {
 	case "GET":
-
+		//tenant := mux.Vars(req)["tenant"]
+		//TODO: handle GET
 	case "POST":
 		decoder := json.NewDecoder(req.Body)
 		items := []nodehandler.Item{}
@@ -67,7 +69,7 @@ func Items(w http.ResponseWriter, req *http.Request) {
 			resp.Message = err.Error()
 		} else {
 			//balanceNodes() distribute items across nodes
-			cdt.SendMessagesToNodes(nodehandler.Request{ "POST" })
+			cdt.SendMessagesToNodes(nodehandler.Request{"POST"})
 			resp.Status = "OK"
 		}
 	default:
@@ -79,9 +81,11 @@ func Items(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	cdt.StartNodeInstances(6)
-	
-	http.HandleFunc("/items", Items)
-	http.ListenAndServe(":8085", nil)
+	go cdt.StartNodeInstances(6)
+
+	r := mux.NewRouter()
+	r.HandleFunc("/items/{tenant}/count", Items)
+	r.HandleFunc("/items", Items)
+	http.ListenAndServe(":8085", r)
 
 }
