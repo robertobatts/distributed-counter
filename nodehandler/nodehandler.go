@@ -17,6 +17,7 @@ type Node struct {
 
 type Request struct {
 	Type string `json:"type"`
+	Item *Item  `json:"item,omitempty"`
 }
 
 type Response struct {
@@ -31,8 +32,8 @@ type Item struct {
 
 var inMemoryItems = make(map[int]Item)
 
-func (node *Node) StoreItem() {
-	inMemoryItems[node.Item.ID] = *node.Item
+func (node *Node) StoreItem(item Item) {
+	inMemoryItems[node.Item.ID] = item
 }
 
 func (node *Node) CountItems() {
@@ -65,14 +66,14 @@ func (node *Node) ListenOnPort() error {
 		} else {
 			var req Request
 			json.NewDecoder(conn).Decode(&req)
-			fmt.Printf("Request: %v, Item: %v\n", req, node.Item)
 
 			switch req.Type {
 			case "GET":
 				node.CountItems()
 				resp.Status = "OK"
 			case "POST":
-				node.StoreItem()
+				fmt.Printf("Item: %v\n", *req.Item)
+				node.StoreItem(*req.Item)
 				resp.Status = "OK"
 			default:
 				resp.Status = "KO"

@@ -19,7 +19,7 @@ func TestNodesCommunication(t *testing.T) {
 	cdt := Coordinator{[]*nodehandler.Node{&node}}
 	go node.Run()
 	time.Sleep(2 * time.Second)
-	cdt.SendMessagesToNodes(nodehandler.Request{"POST"}, []nodehandler.Item{item})
+	cdt.SendMessagesToNodes(nodehandler.Request{"POST", nil}, []nodehandler.Item{item})
 	time.Sleep(2 * time.Second)
 }
 
@@ -34,6 +34,6 @@ func TestWithMoreItemsThanNodes(t *testing.T) {
 		nodehandler.Item{5, "sonar"},
 	}
 	time.Sleep(2 * time.Second)
-	go cdt.SendMessagesToNodes(nodehandler.Request{"POST"}, items)
+	go cdt.SendMessagesToNodes(nodehandler.Request{"POST", nil}, items)
 	time.Sleep(5 * time.Second)
 }

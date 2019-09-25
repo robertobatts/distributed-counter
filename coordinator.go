@@ -16,7 +16,7 @@ type Coordinator struct {
 }
 
 var cdt = Coordinator{}
-var NODES_NUMBER = 6
+var NODES_NUMBER = 2
 
 func (cdt *Coordinator) StartNodeInstances(n int) {
 	nodes := make([]*nodehandler.Node, n)
@@ -49,12 +49,12 @@ func (cdt *Coordinator) SendMessagesToNodes(req nodehandler.Request, items []nod
 			} else {
 				//listening continuosly for available nodes until I don't find one
 				cdt.CallAvailableNode(req, items[idx])
-				done <- true
 			}
+			done <- true
 		}(i)
 	}
 
-	for i := 0; i < len(items); i++ {
+	for i := 0; i < len(done); i++ {
 		<-done
 	}
 }
@@ -67,6 +67,7 @@ func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node
 		cdt.CallAvailableNode(req, item)
 	} else {
 		node.Item = &item
+		req.Item = &item
 		errEnc := json.NewEncoder(conn).Encode(&req)
 		var resp nodehandler.Response
 		errDec := json.NewDecoder(conn).Decode(&resp)
@@ -120,7 +121,7 @@ func Items(w http.ResponseWriter, req *http.Request) {
 			resp.Message = err.Error()
 		} else {
 			//balanceNodes() distribute items across nodes
-			cdt.SendMessagesToNodes(nodehandler.Request{"POST"}, items)
+			cdt.SendMessagesToNodes(nodehandler.Request{"POST", nil}, items)
 			resp.Status = "OK"
 		}
 	default:
