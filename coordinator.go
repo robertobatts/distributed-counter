@@ -16,7 +16,7 @@ type Coordinator struct {
 }
 
 var cdt = Coordinator{}
-var NODES_NUMBER = 2
+var NODES_NUMBER = 4
 
 func (cdt *Coordinator) StartNodeInstances(n int) {
 	nodes := make([]*nodehandler.Node, n)
@@ -144,7 +144,6 @@ func (cdt *Coordinator) GetCounter(tenant string) (int, error) {
 		return 0, err
 	}
 	return resp.Counter, nil
-
 }
 
 func Items(w http.ResponseWriter, req *http.Request) {

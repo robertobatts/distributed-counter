@@ -16,7 +16,7 @@ type Node struct {
 }
 
 type Request struct {
-	Type       string          `json:"type"`
+	Type       string          `json:"type"` //=POST for writing, GET for reading, MOVE for replicating memory to master
 	Item       *Item           `json:"item,omitempty"`
 	MasterPort string          `json:"masterPort,omitempty"`
 	Memory     map[int64]*Item `json:"memory"`
@@ -25,7 +25,7 @@ type Request struct {
 type Response struct {
 	Status  string `json:"status,omitempty"`
 	Message string `json:"message,omitempty"`
-	Counter int    `json:"counter,omitempty`
+	Counter int    `json:"counter,omitempty"`
 }
 
 type Item struct {
@@ -101,7 +101,6 @@ func (node *Node) ListenOnPort() error {
 			switch req.Type {
 			case "MOVE":
 				node.HandleMoveRequest(req, &resp)
-
 			case "GET":
 				fmt.Println("Tenant: " + req.Item.Tenant)
 				resp.Status = "OK"
