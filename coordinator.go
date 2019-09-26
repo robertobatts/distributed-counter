@@ -16,7 +16,7 @@ type Coordinator struct {
 }
 
 var cdt = Coordinator{}
-var NODES_NUMBER = 2
+var NODES_NUMBER = 4
 
 func (cdt *Coordinator) StartNodeInstances(n int) {
 	nodes := make([]*nodehandler.Node, n)

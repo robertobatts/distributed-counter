@@ -73,7 +73,6 @@ func MoveDataToMaster(port string) {
 	json.NewEncoder(conn).Encode(&Request{Type: "MOVE", Memory: inMemoryItems})
 	var resp Response
 	json.NewDecoder(conn).Decode(&resp)
-	fmt.Printf("Status: %v\n", resp.Status)
 	conn.Close()
 }
 
