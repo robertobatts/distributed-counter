@@ -86,6 +86,8 @@ func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node
 			cdt.CallAvailableNode(req, items)
 		}
 	} else {
+		master := cdt.GetMasterNode()
+		req.MasterPort = master.Port
 		if req.Type == "POST" {
 			req.Items = items
 		}
@@ -142,20 +144,6 @@ func (cdt *Coordinator) GetMasterNode() *nodehandler.Node {
 	return nil
 }
 
-func (cdt *Coordinator) AlignNodesMemory() {
-	//no need to align if there is only one node
-	if len(cdt.Nodes) > 1 {
-		master := cdt.GetMasterNode()
-		req := nodehandler.Request{Type: "MOVE", MasterPort: master.Port}
-		//no reasono to run it parallel, because the master port will be busy
-		for _, node := range cdt.Nodes {
-			if !node.IsMaster {
-				cdt.CallNode(req, node, nil) //TODO: handle the error
-			}
-		}
-	}
-}
-
 func (cdt *Coordinator) GetCounter(tenant string) (*int, error) {
 	node := cdt.GetMasterNode()
 	req := nodehandler.Request{Type: "GET", Tenant: tenant}
@@ -171,7 +159,6 @@ func Items(w http.ResponseWriter, req *http.Request) {
 	resp := nodehandler.Response{}
 	switch req.Method {
 	case "GET":
-		cdt.AlignNodesMemory()
 		tenant := mux.Vars(req)["tenant"]
 		counter, err := cdt.GetCounter(tenant)
 

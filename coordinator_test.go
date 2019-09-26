@@ -44,18 +44,25 @@ func TestWithMoreItemsThanNodes(t *testing.T) {
 	time.Sleep(5 * time.Second)
 }
 
-func TestAlignNodesMemory(t *testing.T) {
+func TestGetCounter(t *testing.T) {
 	node1 := nodehandler.Node{NodeID: 1, Port: "8090", IsMaster: true}
 	node2 := nodehandler.Node{NodeID: 1, Port: "8091", IsMaster: false}
+	cdt := Coordinator{Nodes: []*nodehandler.Node{&node1, &node2}}
 
 	go node1.Run()
 	go node2.Run()
 	time.Sleep(1 * time.Second)
 
-	item := nodehandler.Item{ID: 1, Tenant: "PublicSonar"}
-	node2.StoreItems([]*nodehandler.Item{&item})
+	items := []*nodehandler.Item{
+		&nodehandler.Item{ID: 1, Tenant: "PublicSonar"},
+		&nodehandler.Item{ID: 2, Tenant: "PublicSonar"},
+	}
 
-	cdt := Coordinator{Nodes: []*nodehandler.Node{&node1, &node2}}
-	cdt.AlignNodesMemory()
-	time.Sleep(3 * time.Second)
+	cdt.CallNode(nodehandler.Request{Type: "POST"}, &node2, items)
+
+	counter, err := cdt.GetCounter("PublicSonar")
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	fmt.Printf("Counter: %v\n", *counter)
 }

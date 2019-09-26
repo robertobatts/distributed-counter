@@ -112,6 +112,12 @@ func (node *Node) ListenOnPort() error {
 			case "POST":
 				fmt.Printf("Item: %v\n", req.Items)
 				node.StoreItems(req.Items)
+
+				/*move data in a goroutine, so that that this node can be available to be called again
+				while it's copyinh the data to the master. In this way the update/insert operations
+				are optimized and I don't risk losing any data if this node go down
+				*/
+				go MoveDataToMaster(req.MasterPort)
 				resp.Status = "OK"
 			default:
 				resp.Status = "KO"
@@ -127,7 +133,7 @@ func (node *Node) ListenOnPort() error {
 
 func (node *Node) Run() error {
 
-	fmt.Println(node)
+	fmt.Printf("Node %v, Port: %v, isMaster: %v\n", node.NodeID, node.Port, node.IsMaster)
 
 	err := node.ListenOnPort()
 
