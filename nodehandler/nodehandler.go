@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"strconv"
 )
 
 /* Informations about node */
@@ -120,7 +121,7 @@ func (node *Node) ListenOnPort() error {
 				resp.Status = "OK"
 			default:
 				resp.Status = "KO"
-				resp.Message = "Sorry, only POST and GET methods are supported"
+				resp.Message = "Request type invalid"
 			}
 
 			json.NewEncoder(conn).Encode(&resp)
@@ -130,11 +131,15 @@ func (node *Node) ListenOnPort() error {
 	return nil
 }
 
-func (node *Node) Run() error {
+func (node *Node) Run() {
 
 	fmt.Printf("Node %v, Port: %v, isMaster: %v\n", node.NodeID, node.Port, node.IsMaster)
 
 	err := node.ListenOnPort()
+	if err != nil {
+		port, _ := strconv.Atoi(node.Port)
+		node.Port = strconv.Itoa(port + 1)
+		node.Run()
+	}
 
-	return err
 }

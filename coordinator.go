@@ -185,6 +185,11 @@ func Items(w http.ResponseWriter, req *http.Request) {
 		resp.Status = "KO"
 		resp.Message = "Sorry, only POST and GET methods are supported"
 	}
+	if (resp.Status == "OK") {
+		w.WriteHeader(http.StatusInternalServerError)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
