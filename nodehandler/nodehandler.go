@@ -31,8 +31,8 @@ type Response struct {
 }
 
 type Item struct {
-	ID           int64     `json:"id"`
-	Tenant       string    `json:"tenant"`
+	ID           *int64     `json:"id,omitempty"`
+	Tenant       *string    `json:"tenant,omitempty"`
 	LastUpdateDt time.Time `JSON:"lastUpdateDt"`
 }
 
@@ -41,14 +41,14 @@ var inMemoryItems = make(map[int64]*Item)
 func (node *Node) StoreItems(items []*Item) {
 	for _, item := range items {
 		item.LastUpdateDt = time.Now()
-		inMemoryItems[item.ID] = item
+		inMemoryItems[*item.ID] = item
 	}
 }
 
 func CountItemsGroupedByTenant(tenant string) int {
 	counter := 0
 	for _, item := range inMemoryItems {
-		if item.Tenant == tenant {
+		if *item.Tenant == tenant {
 			counter++
 		}
 	}

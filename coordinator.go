@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"errors"
 
 	"github.com/gorilla/mux"
 )
@@ -165,6 +166,15 @@ func (cdt *Coordinator) GetCounter(tenant string) (*int, error) {
 	return resp.Counter, nil
 }
 
+func ValidateItems(items []*nodehandler.Item) error {
+	for _, item := range items {
+		if item.ID == nil || item.Tenant == nil || *item.Tenant == "" {
+			return errors.New("Items not valid, ID or tenant missing")
+		}
+	}
+	return nil
+}
+
 func Items(w http.ResponseWriter, req *http.Request) {
 	resp := nodehandler.Response{}
 	switch req.Method {
@@ -187,15 +197,20 @@ func Items(w http.ResponseWriter, req *http.Request) {
 			resp.Status = "KO"
 			resp.Message = err.Error()
 		} else {
-			//balanceNodes() distribute items across nodes
-			cdt.WriteMessagesToNodes(nodehandler.Request{Type: "POST"}, items)
-			resp.Status = "OK"
+			err := ValidateItems(items)
+			if err != nil {
+				resp.Status = "KO"
+				resp.Message = err.Error()
+			} else {
+				cdt.WriteMessagesToNodes(nodehandler.Request{Type: "POST"}, items)
+				resp.Status = "OK"
+			}
 		}
 	default:
 		resp.Status = "KO"
 		resp.Message = "Sorry, only POST and GET methods are supported"
 	}
-	if (resp.Status == "OK") {
+	if (resp.Status != "OK") {
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
 		w.WriteHeader(http.StatusOK)
@@ -203,6 +218,7 @@ func Items(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
 
 func main() {
 	go cdt.StartNodeInstances(NODES_NUMBER)
