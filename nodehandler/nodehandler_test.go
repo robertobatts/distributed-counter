@@ -17,7 +17,8 @@ func TestMemoryMovement(t *testing.T) {
 	go node1.Run()
 	go node2.Run()
 	time.Sleep(1 * time.Second)
-	node2.StoreItem(Item{ID: 1, Tenant: "PublicSonar"})
+	item := Item{ID: 1, Tenant: "PublicSonar"}
+	node2.StoreItems([]*Item{&item})
 	MoveDataToMaster("8090")
 	time.Sleep(3 * time.Second)
 }

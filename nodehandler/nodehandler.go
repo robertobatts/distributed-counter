@@ -17,7 +17,8 @@ type Node struct {
 
 type Request struct {
 	Type       string          `json:"type"` //=POST for writing, GET for reading, MOVE for replicating memory to master
-	Item       *Item           `json:"item,omitempty"`
+	Items      []*Item         `json:"item,omitempty"`
+	Tenant     string          `json:"tenant,omitempty"`
 	MasterPort string          `json:"masterPort,omitempty"`
 	Memory     map[int64]*Item `json:"memory"`
 }
@@ -25,7 +26,7 @@ type Request struct {
 type Response struct {
 	Status  string `json:"status,omitempty"`
 	Message string `json:"message,omitempty"`
-	Counter int    `json:"counter,omitempty"`
+	Counter *int   `json:"counter,omitempty"`
 }
 
 type Item struct {
@@ -36,9 +37,11 @@ type Item struct {
 
 var inMemoryItems = make(map[int64]*Item)
 
-func (node *Node) StoreItem(item Item) {
-	item.LastUpdateDt = time.Now()
-	inMemoryItems[item.ID] = &item
+func (node *Node) StoreItems(items []*Item) {
+	for _, item := range items {
+		item.LastUpdateDt = time.Now()
+		inMemoryItems[item.ID] = item
+	}
 }
 
 func CountItemsGroupedByTenant(tenant string) int {
@@ -102,12 +105,13 @@ func (node *Node) ListenOnPort() error {
 			case "MOVE":
 				node.HandleMoveRequest(req, &resp)
 			case "GET":
-				fmt.Println("Tenant: " + req.Item.Tenant)
+				fmt.Println("Tenant: " + req.Tenant)
 				resp.Status = "OK"
-				resp.Counter = CountItemsGroupedByTenant(req.Item.Tenant)
+				counter := CountItemsGroupedByTenant(req.Tenant)
+				resp.Counter = &counter
 			case "POST":
-				fmt.Printf("Item: %v\n", *req.Item)
-				node.StoreItem(*req.Item)
+				fmt.Printf("Item: %v\n", req.Items)
+				node.StoreItems(req.Items)
 				resp.Status = "OK"
 			default:
 				resp.Status = "KO"

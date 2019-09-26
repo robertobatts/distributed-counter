@@ -16,7 +16,7 @@ type Coordinator struct {
 }
 
 var cdt = Coordinator{}
-var NODES_NUMBER = 4
+var NODES_NUMBER = 2
 
 func (cdt *Coordinator) StartNodeInstances(n int) {
 	nodes := make([]*nodehandler.Node, n)
@@ -39,16 +39,34 @@ func (cdt *Coordinator) StartNodeInstances(n int) {
 
 }
 
-func (cdt *Coordinator) WriteMessagesToNodes(req nodehandler.Request, items []nodehandler.Item) {
-	done := make(chan bool, len(items)-1)
+func GetBalancedIndexes(itemsDim int, inodesDim int) []int {
+	itemsPerNode := itemsDim / inodesDim
+	reminder := itemsDim % inodesDim
+	balancedIdxs := make([]int, inodesDim+1)
+	balancedIdxs[0] = 0
+	for i := 1; i < len(balancedIdxs); i++ {
+		balancedIdxs[i] = balancedIdxs[i-1] + itemsPerNode
+		//distribute the reminder equally across nodes
+		if reminder > 0 {
+			balancedIdxs[i]++
+			reminder--
+		}
+	}
+	return balancedIdxs
+}
 
-	for i := 0; i < len(items); i++ {
+func (cdt *Coordinator) WriteMessagesToNodes(req nodehandler.Request, items []*nodehandler.Item) {
+
+	done := make(chan bool, len(cdt.Nodes)-1)
+	balancedIdxs := GetBalancedIndexes(len(items), len(cdt.Nodes))
+
+	for i := 0; i < len(cdt.Nodes); i++ {
 		go func(idx int) {
-			if idx < len(cdt.Nodes) {
-				cdt.CallNode(req, cdt.Nodes[idx], &items[idx])
+			if !cdt.Nodes[idx].IsBusy {
+				cdt.CallNode(req, cdt.Nodes[idx], items[balancedIdxs[idx]:balancedIdxs[idx+1]])
 			} else {
 				//listening continuosly for available nodes until I don't find one
-				cdt.CallAvailableNode(req, items[idx])
+				cdt.CallAvailableNode(req, items[balancedIdxs[idx]:balancedIdxs[idx+1]])
 			}
 			done <- true
 		}(i)
@@ -59,16 +77,18 @@ func (cdt *Coordinator) WriteMessagesToNodes(req nodehandler.Request, items []no
 	}
 }
 
-func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node, item *nodehandler.Item) (*nodehandler.Response, error) {
+func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node, items []*nodehandler.Item) (*nodehandler.Response, error) {
 	node.IsBusy = true
 	conn, err := net.Dial("tcp", ":"+node.Port)
 	if err != nil {
 		fmt.Println(err.Error())
 		if req.Type == "POST" {
-			cdt.CallAvailableNode(req, *item)
+			cdt.CallAvailableNode(req, items)
 		}
 	} else {
-		req.Item = item
+		if req.Type == "POST" {
+			req.Items = items
+		}
 
 		errEnc := json.NewEncoder(conn).Encode(&req)
 		var resp nodehandler.Response
@@ -92,11 +112,11 @@ func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node
 	return nil, nil
 }
 
-func (cdt *Coordinator) CallAvailableNode(req nodehandler.Request, item nodehandler.Item) {
+func (cdt *Coordinator) CallAvailableNode(req nodehandler.Request, items []*nodehandler.Item) {
 	for {
 		newNode := cdt.GetAvailableNode()
 		if newNode != nil {
-			_, err := cdt.CallNode(req, newNode, &item)
+			_, err := cdt.CallNode(req, newNode, items)
 			if err == nil {
 				break
 			}
@@ -136,13 +156,14 @@ func (cdt *Coordinator) AlignNodesMemory() {
 	}
 }
 
-func (cdt *Coordinator) GetCounter(tenant string) (int, error) {
+func (cdt *Coordinator) GetCounter(tenant string) (*int, error) {
 	node := cdt.GetMasterNode()
-	req := nodehandler.Request{Type: "GET"}
-	resp, err := cdt.CallNode(req, node, &nodehandler.Item{Tenant: tenant})
+	req := nodehandler.Request{Type: "GET", Tenant: tenant}
+	resp, err := cdt.CallNode(req, node, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
+
 	return resp.Counter, nil
 }
 
@@ -162,7 +183,7 @@ func Items(w http.ResponseWriter, req *http.Request) {
 		}
 	case "POST":
 		decoder := json.NewDecoder(req.Body)
-		items := []nodehandler.Item{}
+		items := []*nodehandler.Item{}
 		err := decoder.Decode(&items)
 
 		if err != nil {
