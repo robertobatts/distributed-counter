@@ -79,14 +79,25 @@ func (cdt *Coordinator) WriteMessagesToNodes(req nodehandler.Request, items []*n
 
 func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node, items []*nodehandler.Item) (*nodehandler.Response, error) {
 	node.IsBusy = true
+	/*get the master before calling it for GET operations, so that I can compare it then
+	to see if the master node successfully connected to another port after crashing
+	*/
+	master := cdt.GetMasterNode()
 	conn, err := net.Dial("tcp", ":"+node.Port)
+
 	if err != nil {
 		fmt.Println(err.Error())
-		if req.Type == "POST" {
+		switch(req.Type) {
+		case "POST":		
 			cdt.CallAvailableNode(req, items)
+		case "GET":	
+			/*if the master crashes, it changes port. I check if the port changed so that I can connect
+			to it again and the system is still query-able*/
+			if master.Port != node.Port {
+				cdt.CallNode(req, node, items)
+			}
 		}
 	} else {
-		master := cdt.GetMasterNode()
 		req.MasterPort = master.Port
 		if req.Type == "POST" {
 			req.Items = items
@@ -95,7 +106,6 @@ func (cdt *Coordinator) CallNode(req nodehandler.Request, node *nodehandler.Node
 		errEnc := json.NewEncoder(conn).Encode(&req)
 		var resp nodehandler.Response
 		errDec := json.NewDecoder(conn).Decode(&resp)
-		fmt.Printf("Status: %v\n", resp.Status)
 		conn.Close()
 		if errEnc == nil && errDec == nil && resp.Status == "OK" {
 			/*if the data has been written correctly, I cancel the item from the Node,
